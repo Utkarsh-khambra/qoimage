@@ -1,0 +1,7 @@
+
+[requires]
+	fmt/8.1.1
+	boost-ext-ut/1.1.9
+[generators]
+	cmake_find_package
+	cmake_paths
