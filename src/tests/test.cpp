@@ -10,16 +10,15 @@ int main() {
   "[encode]"_test = [] {
     qoi::Image i;
     should("chunk rgb") = [i]() mutable {
-      auto p = i.encode({{1, 3, 4, 255}}, 1, 1);
+      auto p = i.encode({{1, 3, 4}}, 1, 1);
       auto q = p | std::views::drop(sizeof(qoi_header));
       expect(std::ranges::equal(q, std::vector<unsigned char>{0b10100011, 0x69,
                                                               0, 0, 0, 0, 0, 0,
                                                               0, 1}));
     };
     should("chunk range") = [i]() mutable {
-      auto p = i.encode(
-          std::vector<Pixel>{{1, 3, 4, 255}, {1, 3, 4, 255}, {1, 3, 4, 255}}, 3,
-          1);
+      auto p =
+          i.encode(std::vector<Pixel>{{1, 3, 4}, {1, 3, 4}, {1, 3, 4}}, 3, 1);
       auto q = p | std::views::drop(sizeof(qoi_header));
       expect(std::ranges::equal(
           q, std::vector<unsigned char>{0b10100011, 0x69, 0b11000010, 0, 0, 0,
@@ -73,6 +72,62 @@ int main() {
           0,          0,          0,          0,          0,
           0,          0,          1};
 
+      expect(std::ranges::equal(q, expected_result));
+    };
+  };
+
+  "[decode]"_test = [] {
+    qoi::Image i;
+    should("chunk rgb") = [i]() mutable {
+      auto p = i.encode({{1, 3, 4}}, 1, 1);
+      auto q = i.decode(p);
+      std::vector<Pixel> expected_result{{1, 3, 4}};
+      expect(std::ranges::equal(q, expected_result));
+    };
+
+    should("chunk range") = [i]() mutable {
+      auto p =
+          i.encode(std::vector<Pixel>{{1, 3, 4}, {1, 3, 4}, {1, 3, 4}}, 3, 1);
+      auto q = i.decode(p);
+      expect(std::ranges::equal(
+          q, std::vector<Pixel>{{1, 3, 4}, {1, 3, 4}, {1, 3, 4}}));
+    };
+
+    should("chunk index") = [i]() mutable {
+      auto p = i.encode(std::vector<Pixel>{{1, 3, 4},
+                                           {2, 5, 7},
+                                           {3, 6, 9},
+                                           {1, 3, 4},
+                                           {2, 5, 7},
+                                           {3, 6, 9},
+                                           {3, 6, 9},
+                                           {3, 6, 9},
+                                           {2, 5, 7},
+                                           {2, 5, 7}},
+                        10, 1);
+      auto q = i.decode(p);
+      const std::vector<Pixel> expected_result{
+          {1, 3, 4}, {2, 5, 7}, {3, 6, 9}, {1, 3, 4}, {2, 5, 7},
+          {3, 6, 9}, {3, 6, 9}, {3, 6, 9}, {2, 5, 7}, {2, 5, 7}};
+      expect(std::ranges::equal(q, expected_result));
+    };
+
+    should("chunk difference") = [i]() mutable {
+      auto p = i.encode(std::vector<Pixel>{{1, 3, 4},
+                                           {2, 4, 3},
+                                           {3, 5, 2},
+                                           {1, 3, 4},
+                                           {2, 4, 3},
+                                           {3, 5, 2},
+                                           {3, 5, 2},
+                                           {3, 5, 2},
+                                           {2, 4, 3},
+                                           {2, 4, 3}},
+                        10, 1);
+      auto q = i.decode(p);
+      const std::vector<Pixel> expected_result{
+          {1, 3, 4}, {2, 4, 3}, {3, 5, 2}, {1, 3, 4}, {2, 4, 3},
+          {3, 5, 2}, {3, 5, 2}, {3, 5, 2}, {2, 4, 3}, {2, 4, 3}};
       expect(std::ranges::equal(q, expected_result));
     };
   };

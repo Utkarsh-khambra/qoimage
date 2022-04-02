@@ -2,7 +2,9 @@
 #include <cstddef>
 #include <cstdint>
 struct Pixel {
+  Pixel();
   std::uint8_t r, g, b, a = 255;
+  Pixel(std::uint8_t rr, std::uint8_t gg, std::uint8_t bb);
   [[nodiscard]] std::size_t hash() const noexcept;
   bool operator==(const Pixel &) const noexcept;
 };
@@ -45,6 +47,6 @@ template <> struct fmt::formatter<Pixel> {
   template <typename FormatContext>
   auto format(const Pixel &p, FormatContext &ctx) -> decltype(ctx.out()) {
     // ctx.out() is an output iterator to write to.
-    return format_to(ctx.out(), "({}, {},{}, {})", p.r, p.g, p.b, p.a);
+    return format_to(ctx.out(), "({}, {}, {}, {})", p.r, p.g, p.b, p.a);
   }
 };

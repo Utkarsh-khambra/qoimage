@@ -1,4 +1,5 @@
 #include "qoimage.hpp"
+#include <algorithm>
 #include <array>
 #include <bitset>
 #include <cstdio>
@@ -8,14 +9,100 @@
 #include <fstream>
 #include <ranges>
 #include <span>
+#include <string_view>
+#include <type_traits>
 using namespace qoi;
-
+using namespace std::literals;
 auto generate_header(std::uint32_t width, std::uint32_t height);
 Image::Image() {
   std::fill_n(previous_pixels.begin(), previous_pixels.size(), Pixel());
 }
 
-void Image::decode() {}
+qoi_header parse_header(std::span<unsigned char> data) {
+  static_assert(std::is_trivially_copyable_v<qoi_header>,
+                "qoi header is not trivial to copy");
+  qoi_header header;
+  if (std::ranges::equal(data.subspan(0, 4), "qoif"sv)) {
+    std::memcpy(&header, data.data(), data.size());
+  }
+  if (header.colorspace > 1)
+    std::terminate();
+  if (header.channels - 3 > 1)
+    std::terminate();
+  return header;
+}
+
+std::vector<Pixel> Image::decode(std::span<unsigned char> data) {
+  std::fill_n(previous_pixels.begin(), previous_pixels.size(), Pixel(0, 0, 0));
+  header = parse_header(data.first(sizeof(qoi_header)));
+  data = data.last(data.size() - sizeof(qoi_header));
+  std::vector<Pixel> output_data;
+  Pixel prev(0, 0, 0);
+  while (true) {
+    if (data.front() >> 6 == 0b11) {
+      if (data.front() == 0b11111110) {
+        // Parse color
+        data = data.last(data.size() - 1);
+        static_assert(std::is_trivially_copyable_v<Pixel>,
+                      "Pixel not trivial copyable");
+        output_data.emplace_back(data[0], data[1], data[2]);
+        data = data.last(data.size() - 3);
+        previous_pixels[output_data.back().hash()] = output_data.back();
+        prev = output_data.back();
+        continue;
+      } else {
+        // parse run
+        auto run = data.front() & 0b00111111;
+        data = data.last(data.size() - 1);
+        if (run > 62)
+          std::terminate();
+        for (auto i = 0; i < run; ++i) {
+          output_data.push_back(prev);
+        }
+        continue;
+      }
+    }
+    if (data.front() >> 6 == 0b00 and data.front() != 0) {
+      // Parse index
+      std::size_t index = data.front() & 0b00111111;
+      data = data.last(data.size() - 1);
+      output_data.push_back(previous_pixels[index]);
+      prev = output_data.back();
+      continue;
+    }
+    if (data.front() >> 6 == 0b01) {
+      // Parse Diff
+      auto diff = data.front() & 0b00111111;
+      data = data.last(data.size() - 1);
+      unsigned char r = prev.r + (diff >> 4) - 2;
+      unsigned char g = prev.g + ((diff >> 2) & 0b11) - 2;
+      unsigned char b = prev.b + (diff & 0b11) - 2;
+      output_data.emplace_back(r, g, b);
+      previous_pixels[output_data.back().hash()] = output_data.back();
+      prev = output_data.back();
+      continue;
+    }
+    if (data.front() >> 6 == 0b10) {
+      // Parse LUMA
+      auto diff_green = data.front() & 0b00111111;
+      auto second_byte = data[1];
+      data = data.last(data.size() - 2);
+      unsigned char r = (second_byte >> 4) + (diff_green - 32) + prev.r - 8;
+      unsigned char g = diff_green - 32 + prev.g;
+      unsigned char b = (second_byte & 0x0f) + (diff_green - 32) + prev.b - 8;
+      output_data.emplace_back(r, g, b);
+      previous_pixels[output_data.back().hash()] = output_data.back();
+      prev = output_data.back();
+      continue;
+    }
+    if (std::ranges::all_of(data.first(7),
+                            [](auto i) noexcept -> bool { return i == 0; }) &&
+        data.back() == 1) {
+      break;
+    }
+  }
+  return output_data;
+}
 static const std::array<char, 8> end_marker{0, 0, 0, 0, 0, 0, 0, 1};
 
 auto generate_header(std::uint32_t width, std::uint32_t height) {
@@ -41,7 +128,7 @@ std::vector<unsigned char> Image::encode(const std::vector<Pixel> &data,
               output_image.begin());
   for (std::uint32_t i = 0; i < header.height; ++i) {
     auto row = std::span(data.begin() + i * header.width, header.width);
-    Pixel prev{.r = 0, .g = 0, .b = 0, .a = 255};
+    Pixel prev(0, 0, 0);
     int run = 0;
     for (auto &pixel : row) {
       if (pixel == prev) {
