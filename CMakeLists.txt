@@ -34,7 +34,7 @@ find_package(fmt REQUIRED)
 set(BUILD_TEST ${BUILD_TESTS})
 # ---- Create library ----
 # add_executable(qoimage src/impls/tests.cpp src/impls/catch_main.cpp)
-add_library(qoimage STATIC src/pixel.cpp src/qoimage.cpp)
+add_library(qoimage STATIC src/pixel.cpp src/qoimage.hpp src/qoimage.cpp)
 # Note: for header-only libraries change all PUBLIC flags to INTERFACE and create an interface
 # target: add_library(qoimage INTERFACE) set_target_properties(qoimage PROPERTIES
 # INTERFACE_COMPILE_FEATURES cxx_std_17)
@@ -58,7 +58,7 @@ if(${BUILD_TEST})
 		tests PUBLIC $<BUILD_INTERFACE: ${fmt_INCLUDE_DIRS} ${ut_INCLUDE_DIRS} >
 	)
 
-	target_link_libraries(tests PRIVATE -lasan -lubsan fmt::fmt boost::ut qoimage)
+	target_link_libraries(tests PRIVATE -lasan -lubsan fmt::fmt qoimage boost::ut )
 else()
 	add_executable(qoi src/tests/main.cpp )
 	target_compile_features(qoi PUBLIC cxx_std_20)

@@ -1,4 +1,3 @@
-#include <fmt/core.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "../qoimage.hpp"
 #include "stb.h"
@@ -6,17 +5,19 @@
 #include <fstream>
 int main() {
   int x, y, n;
-  auto p = stbi_load("/home/utkarsh/qoimage/src/test_files/wikipedia_008.png",
-                     &x, &y, &n, 0);
-  qoi::Image i;
-  std::vector<Pixel> pp;
-  Pixel prev(0, 0, 0);
-  int l = 5;
-  for (auto k = 0; k < y * x * n; k += n)
-    pp.emplace_back(p[k], p[k + 1], p[k + 2]);
-
-  stbi_image_free(p);
-  auto q = i.encode(pp, x, y);
+  auto pixel_array =
+      stbi_load("/home/utkarsh/qoimage/src/test_files/dice.png", &x, &y, &n, 0);
+  std::vector<Pixel> pixels;
+  for (auto k = 0; k < y * x * n; k += n) {
+    if (n == 3)
+      pixels.emplace_back(pixel_array[k], pixel_array[k + 1],
+                          pixel_array[k + 2]);
+    else
+      pixels.emplace_back(pixel_array[k], pixel_array[k + 1],
+                          pixel_array[k + 2], pixel_array[k + 3]);
+  }
+  stbi_image_free(pixel_array);
+  auto q = qoi::encode(pixels, x, y, n);
   std::ofstream f("test.qoi", std::ios_base::binary);
   f.write(reinterpret_cast<char *>(q.data()), q.size());
 }

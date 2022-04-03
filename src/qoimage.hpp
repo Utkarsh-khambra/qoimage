@@ -1,5 +1,4 @@
 #pragma once
-
 #include "pixel.hpp"
 #include <array>
 #include <cstddef>
@@ -14,16 +13,7 @@ struct qoi_header {
 };
 
 namespace qoi {
-class Image {
-public:
-  Image();
-  std::vector<unsigned char> encode(const std::vector<Pixel> &, int width,
-                                    int height);
-  std::vector<Pixel> decode(std::span<unsigned char> data);
-
-private:
-  qoi_header header;
-  std::vector<Pixel> pixel_data;
-  std::array<Pixel, 64> previous_pixels;
-};
+std::vector<unsigned char> encode(const std::vector<Pixel> &data, int width,
+                                  int height, int channels);
+std::vector<Pixel> decode(std::span<unsigned char> data);
 } // namespace qoi

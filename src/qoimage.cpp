@@ -1,22 +1,13 @@
 #include "qoimage.hpp"
 #include <algorithm>
 #include <array>
-#include <bitset>
-#include <cstdio>
-#include <exception>
-#include <fmt/core.h>
-#include <fmt/ranges.h>
-#include <fstream>
 #include <ranges>
 #include <span>
 #include <string_view>
 #include <type_traits>
 using namespace qoi;
 using namespace std::literals;
-auto generate_header(std::uint32_t width, std::uint32_t height);
-Image::Image() {
-  std::fill_n(previous_pixels.begin(), previous_pixels.size(), Pixel());
-}
+static auto generate_header(std::uint32_t width, std::uint32_t height);
 
 template <typename T> static void copy_int(T *data, unsigned int src) {
   auto temp_data = reinterpret_cast<unsigned char *>(data);
@@ -30,7 +21,7 @@ template <typename T> static void copy_byte(T *data, unsigned char src) {
   *data = src;
 }
 
-qoi_header parse_header(std::span<unsigned char> data) {
+static qoi_header parse_header(std::span<unsigned char> data) {
   static_assert(std::is_trivially_copyable_v<qoi_header>,
                 "qoi header is not trivial to copy");
   qoi_header header;
@@ -44,8 +35,8 @@ qoi_header parse_header(std::span<unsigned char> data) {
     copy_byte(&header.channels, data[12]);
     copy_byte(&header.colorspace, data[13]);
   }
-  // if (header.colorspace > 1)
-  //   std::terminate();
+  if (header.colorspace > 1)
+    std::terminate();
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstrict-overflow"
   if (header.channels - 3 > 1)
@@ -54,9 +45,10 @@ qoi_header parse_header(std::span<unsigned char> data) {
 }
 #pragma GCC diagnostic pop
 
-std::vector<Pixel> Image::decode(std::span<unsigned char> data) {
+std::vector<Pixel> qoi::decode(std::span<unsigned char> data) {
+  std::array<Pixel, 64> previous_pixels;
   std::fill_n(previous_pixels.begin(), previous_pixels.size(), Pixel(0, 0, 0));
-  header = parse_header(data.first(14));
+  auto header = parse_header(data.first(14));
   data = data.last(data.size() - 14);
   std::vector<Pixel> output_data;
   Pixel prev(0, 0, 0);
@@ -127,22 +119,24 @@ std::vector<Pixel> Image::decode(std::span<unsigned char> data) {
 }
 static const std::array<char, 8> end_marker{0, 0, 0, 0, 0, 0, 0, 1};
 
-auto generate_header(std::uint32_t width, std::uint32_t height) {
+auto generate_header(std::uint32_t width, std::uint32_t height, int channels) {
   return qoi_header{
       .width = width,
       .height = height,
-      .channels = 3,  // 3 for RGB and 4 for RGBA
-      .colorspace = 0 // 0 for sRGB with linear alpha
-                      // 1 for all channels linear
+      .channels =
+          static_cast<std::uint8_t>(channels), // 3 for RGB and 4 for RGBA
+      .colorspace = 0                          // 0 for sRGB with linear
+                                               // alpha
+                                               // 1 for all channels linear
   };
 }
 
-enum class CHUNK_TYPE { RGB, INDEX, DIFF, LUMA, RUN, UNKNOWN };
-
-std::vector<unsigned char> Image::encode(const std::vector<Pixel> &data,
-                                         int width, int height) {
-  header = generate_header(static_cast<std::uint32_t>(width),
-                           static_cast<std::uint32_t>(height));
+std::vector<unsigned char> qoi::encode(const std::vector<Pixel> &data,
+                                       int width, int height, int channels) {
+  std::array<Pixel, 64> previous_pixels;
+  std::fill_n(previous_pixels.begin(), 64, Pixel(0, 0, 0, 0));
+  auto header = generate_header(static_cast<std::uint32_t>(width),
+                                static_cast<std::uint32_t>(height), channels);
   std::vector<unsigned char> output_image(14);
   copy_int(output_image.data(), 0x716f6966);
   copy_int(output_image.data() + 4, header.width);
@@ -150,9 +144,10 @@ std::vector<unsigned char> Image::encode(const std::vector<Pixel> &data,
   copy_byte(output_image.data() + 12, header.channels);
   copy_byte(output_image.data() + 13, header.colorspace);
   Pixel prev(0, 0, 0);
+
+  int run = 0;
   for (std::uint32_t i = 0; i < header.height; ++i) {
     auto row = std::span(data.begin() + i * header.width, header.width);
-    int run = 0;
     for (auto &pixel : row) {
       if (pixel == prev) {
         ++run;
@@ -178,39 +173,41 @@ std::vector<unsigned char> Image::encode(const std::vector<Pixel> &data,
 
         } else {
           previous_pixels[pixel.hash()] = pixel;
-          if (auto dr = (pixel.r - prev.r + 2), dg = (pixel.g - prev.g + 2),
-              db = (pixel.b - prev.b + 2);
-              dr >= 0 && dr < 4 && dg >= 0 && dg < 4 && db >= 0 && db < 4) {
-            std::uint8_t chunk = 0x40 | (dr << 4) | (dg << 2) | db;
-            output_image.push_back(chunk);
-          } else if (auto diff_green = dg + 30, dr_dg = dr - dg + 8,
-                     db_dg = db - dg + 8;
-                     diff_green >= 0 && diff_green <= 63 && dr_dg >= 0 &&
-                     dr_dg <= 15 && db_dg >= 0 && db_dg <= 15) {
-            std::uint16_t chunk =
-                0x8000 | (diff_green << 8) | (dr_dg << 4) | (db_dg);
-            output_image.push_back(chunk >> 8);
-            output_image.push_back(chunk);
+          if (pixel.a == prev.a) {
+            if (auto dr = (pixel.r - prev.r + 2), dg = (pixel.g - prev.g + 2),
+                db = (pixel.b - prev.b + 2);
+                dr >= 0 && dr < 4 && dg >= 0 && dg < 4 && db >= 0 && db < 4) {
+              std::uint8_t chunk = 0x40 | (dr << 4) | (dg << 2) | db;
+              output_image.push_back(chunk);
+            } else if (auto diff_green = dg + 30, dr_dg = dr - dg + 8,
+                       db_dg = db - dg + 8;
+                       diff_green >= 0 && diff_green <= 63 && dr_dg >= 0 &&
+                       dr_dg <= 15 && db_dg >= 0 && db_dg <= 15) {
+              std::uint16_t chunk =
+                  0x8000 | (diff_green << 8) | (dr_dg << 4) | (db_dg);
+              output_image.push_back(chunk >> 8);
+              output_image.push_back(chunk);
+            } else {
+              output_image.push_back(0xfe);
+              output_image.push_back(pixel.r);
+              output_image.push_back(pixel.g);
+              output_image.push_back(pixel.b);
+            }
           } else {
-            std::uint32_t chunk =
-                0xfe000000 | (pixel.r << 16) | (pixel.g << 8) | pixel.b;
-            output_image.push_back(chunk >> 24);
-            output_image.push_back(chunk >> 16);
-            output_image.push_back(chunk >> 8);
-            output_image.push_back(chunk);
+            output_image.push_back(0xff);
+            output_image.push_back(pixel.r);
+            output_image.push_back(pixel.g);
+            output_image.push_back(pixel.b);
+            output_image.push_back(pixel.a);
           }
         }
       }
       prev = pixel;
     }
-    if (run > 0) {
-      if (run >= 63) {
-        std::terminate();
-      }
-      std::uint8_t chunk = (0xc0 | run) - 1;
-      output_image.push_back(chunk);
-      run = 0;
-    }
+  }
+  if (run > 0) {
+    std::uint8_t chunk = 0xc0 | (run - 1);
+    output_image.push_back(chunk);
   }
   output_image.insert(output_image.end(), end_marker.begin(), end_marker.end());
   return output_image;
