@@ -1,18 +1,13 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <fmt/format.h>
 struct Pixel {
   Pixel();
   std::uint8_t r, g, b, a = 255;
   Pixel(std::uint8_t rr, std::uint8_t gg, std::uint8_t bb);
   [[nodiscard]] std::size_t hash() const noexcept;
   bool operator==(const Pixel &) const noexcept;
-};
-
-#include <fmt/format.h>
-
-struct point {
-  double x, y;
 };
 
 template <> struct fmt::formatter<Pixel> {

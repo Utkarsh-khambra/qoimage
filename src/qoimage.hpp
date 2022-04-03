@@ -7,7 +7,6 @@
 #include <span>
 #include <vector>
 struct qoi_header {
-  std::uint32_t magic;
   std::uint32_t width;
   std::uint32_t height;
   std::uint8_t channels;

@@ -19,7 +19,7 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set (BUILD_TESTS ON)
+set (BUILD_TEST ON)
 # ---- Add dependencies via CPM ----
 # see https://github.com/TheLartians/CPM.cmake for more info
 
@@ -31,7 +31,7 @@ find_package(fmt REQUIRED)
 
 # Note: globbing sources is considered bad practice as CMake's generators may not detect new files
 # automatically. Keep that in mind when changing files, or explicitly mention them here.
-
+set(BUILD_TEST ${BUILD_TESTS})
 # ---- Create library ----
 # add_executable(qoimage src/impls/tests.cpp src/impls/catch_main.cpp)
 add_library(qoimage STATIC src/pixel.cpp src/qoimage.cpp)
@@ -49,7 +49,7 @@ target_include_directories(
 target_link_libraries(qoimage PRIVATE -lasan -lubsan fmt::fmt)
 
 
-if(${BUILD_TESTS})
+if(${BUILD_TEST})
 	add_executable(tests src/tests/test.cpp)
 	target_compile_features(tests PUBLIC cxx_std_20)
 	target_compile_options(tests PRIVATE -ggdb  -fsanitize=address -fsanitize=undefined -pedantic -Wall -Wextra -Wcast-align -Wcast-qual -Wctor-dtor-privacy -Wdisabled-optimization -Wformat=2 -Winit-self -Wlogical-op -Wmissing-declarations -Wmissing-include-dirs -Wnoexcept -Wold-style-cast -Woverloaded-virtual -Wredundant-decls -Wshadow -Wsign-conversion -Wsign-promo -Wstrict-null-sentinel -Wstrict-overflow=5 -Wswitch-default -Wundef -Wno-unused )
@@ -59,6 +59,16 @@ if(${BUILD_TESTS})
 	)
 
 	target_link_libraries(tests PRIVATE -lasan -lubsan fmt::fmt boost::ut qoimage)
+else()
+	add_executable(qoi src/tests/main.cpp )
+	target_compile_features(qoi PUBLIC cxx_std_20)
+	target_compile_options(qoi PRIVATE -ggdb  -fsanitize=address -fsanitize=undefined -pedantic -Wall -Wextra -Wcast-align -Wcast-qual -Wctor-dtor-privacy -Wdisabled-optimization -Wformat=2 -Winit-self -Wlogical-op -Wmissing-declarations -Wmissing-include-dirs -Wnoexcept -Wold-style-cast -Woverloaded-virtual -Wredundant-decls -Wshadow -Wsign-conversion -Wsign-promo -Wstrict-null-sentinel -Wstrict-overflow=5 -Wswitch-default -Wundef -Wno-unused )
+
+	target_include_directories(
+		qoi PUBLIC $<BUILD_INTERFACE: ${fmt_INCLUDE_DIRS}  >
+	)
+
+	target_link_libraries(qoi PRIVATE -lasan -lubsan fmt::fmt  qoimage)
 endif()
 
 # ---- Create an installable target ----
