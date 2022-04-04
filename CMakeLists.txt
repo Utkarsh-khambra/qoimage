@@ -60,7 +60,7 @@ if(${BUILD_TEST})
 
 	target_link_libraries(tests PRIVATE -lasan -lubsan fmt::fmt qoimage boost::ut )
 else()
-	add_executable(qoi src/tests/main.cpp )
+	add_executable(qoi src/tests/stb.cpp src/tests/stb_image_write.cpp src/tests/main.cpp )
 	target_compile_features(qoi PUBLIC cxx_std_20)
 	target_compile_options(qoi PRIVATE -ggdb  -fsanitize=address -fsanitize=undefined -pedantic -Wall -Wextra -Wcast-align -Wcast-qual -Wctor-dtor-privacy -Wdisabled-optimization -Wformat=2 -Winit-self -Wlogical-op -Wmissing-declarations -Wmissing-include-dirs -Wnoexcept -Wold-style-cast -Woverloaded-virtual -Wredundant-decls -Wshadow -Wsign-conversion -Wsign-promo -Wstrict-null-sentinel -Wstrict-overflow=5 -Wswitch-default -Wundef -Wno-unused )
 

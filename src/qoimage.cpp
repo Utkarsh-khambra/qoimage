@@ -1,6 +1,7 @@
 #include "qoimage.hpp"
 #include <algorithm>
 #include <array>
+#include <exception>
 #include <ranges>
 #include <span>
 #include <string_view>
@@ -18,106 +19,113 @@ template <typename T> static void copy_int(T *data, unsigned int src) {
 
 template <typename T> static void copy_byte(T *data, unsigned char src) {
   auto temp_data = reinterpret_cast<unsigned char *>(data);
-  *data = src;
+  *temp_data = src;
 }
 
 static qoi_header parse_header(std::span<unsigned char> data) {
   static_assert(std::is_trivially_copyable_v<qoi_header>,
                 "qoi header is not trivial to copy");
   qoi_header header;
-  if (std::ranges::equal(data.subspan(0, 4), "qoif"sv)) {
+  const auto magic = "qoif"sv;
+  if (std::ranges::equal(data.first(4), magic)) {
+    // Copying in reverse because it is stored in reverse order in file
     copy_int(&header.width,
-             static_cast<unsigned int>(data[4] << 24 | data[5] << 16 |
-                                       data[6] << 8 | data[7]));
+             static_cast<unsigned int>(data[7] << 24 | data[6] << 16 |
+                                       data[5] << 8 | data[4]));
     copy_int(&header.height,
-             static_cast<unsigned int>(data[8] << 24 | data[9] << 16 |
-                                       data[10] << 8 | data[11]));
+             static_cast<unsigned int>(data[11] << 24 | data[10] << 16 |
+                                       data[9] << 8 | data[8]));
     copy_byte(&header.channels, data[12]);
     copy_byte(&header.colorspace, data[13]);
   }
-  if (header.colorspace > 1)
+  if (header.colorspace > 1) {
     std::terminate();
+  }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstrict-overflow"
-  if (header.channels - 3 > 1)
+  if (header.channels - 3 > 1) {
     std::terminate();
+  }
   return header;
 }
 #pragma GCC diagnostic pop
 
-std::vector<Pixel> qoi::decode(std::span<unsigned char> data) {
+static const std::array<char, 8> end_marker{0, 0, 0, 0, 0, 0, 0, 1};
+qoi::Image qoi::decode(std::span<unsigned char> data) {
+  qoi::Image image;
+  // std::vector<Pixel> image.pixels;
   std::array<Pixel, 64> previous_pixels;
-  std::fill_n(previous_pixels.begin(), previous_pixels.size(), Pixel(0, 0, 0));
-  auto header = parse_header(data.first(14));
+  std::fill_n(previous_pixels.begin(), previous_pixels.size(),
+              Pixel(0, 0, 0, 0));
+  image.header = parse_header(data.first(14));
   data = data.last(data.size() - 14);
-  std::vector<Pixel> output_data;
   Pixel prev(0, 0, 0);
   while (true) {
     if (data.front() >> 6 == 0b11) {
       if (data.front() == 0b11111110) {
-        // Parse color
+        // Parse RGB
         data = data.last(data.size() - 1);
         static_assert(std::is_trivially_copyable_v<Pixel>,
                       "Pixel not trivial copyable");
-        output_data.emplace_back(data[0], data[1], data[2]);
+        image.pixels.emplace_back(data[0], data[1], data[2]);
         data = data.last(data.size() - 3);
-        previous_pixels[output_data.back().hash()] = output_data.back();
-        prev = output_data.back();
-        continue;
+        previous_pixels[image.pixels.back().hash()] = image.pixels.back();
+        // prev = image.pixels.back();
+      } else if (data.front() == 0b11111111) {
+        // Parse RGBA
+        data = data.last(data.size() - 1);
+        static_assert(std::is_trivially_copyable_v<Pixel>,
+                      "Pixel not trivial copyable");
+        image.pixels.emplace_back(data[0], data[1], data[2], data[3]);
+        data = data.last(data.size() - 4);
+        previous_pixels[image.pixels.back().hash()] = image.pixels.back();
       } else {
         // parse run
         auto run = (data.front() & 0b00111111) + 1;
         data = data.last(data.size() - 1);
-        if (run > 62)
-          std::terminate();
         for (auto i = 0; i < run; ++i) {
-          output_data.push_back(prev);
+          image.pixels.push_back(prev);
         }
-        continue;
+      }
+    } else {
+      if (std::ranges::equal(data.first(8), end_marker)) {
+        break;
+      } else if (data.front() >> 6 == 0b00) {
+        // Parse index
+        std::size_t index = data.front() & 0b00111111;
+        if (data[1] >> 6 == 0b00 and index == (data[1] & 0b00111111)) {
+          std::terminate();
+        }
+        data = data.last(data.size() - 1);
+        image.pixels.push_back(previous_pixels[index]);
+        // prev = image.pixels.back();
+      } else if (data.front() >> 6 == 0b01) {
+        // Parse Diff
+        auto diff = data.front() & 0b00111111;
+        data = data.last(data.size() - 1);
+        unsigned char r = prev.r + ((diff >> 4) & 0b11) - 2;
+        unsigned char g = prev.g + ((diff >> 2) & 0b11) - 2;
+        unsigned char b = prev.b + (diff & 0b11) - 2;
+        image.pixels.emplace_back(r, g, b, prev.a);
+        previous_pixels[image.pixels.back().hash()] = image.pixels.back();
+        // prev = image.pixels.back();
+      } else if (data.front() >> 6 == 0b10) {
+        // Parse LUMA
+        auto diff_green = data.front() & 0b00111111;
+        int second_byte = data[1];
+        data = data.last(data.size() - 2);
+        unsigned char r = (second_byte >> 4) + (diff_green - 32) + prev.r - 8;
+        unsigned char g = diff_green - 32 + prev.g;
+        unsigned char b = (second_byte & 0x0f) + (diff_green - 32) + prev.b - 8;
+        image.pixels.emplace_back(r, g, b, prev.a);
+        previous_pixels[image.pixels.back().hash()] = image.pixels.back();
+        // prev = image.pixels.back();
       }
     }
-    if (data.front() >> 6 == 0b00 and data.front() != 0) {
-      // Parse index
-      std::size_t index = data.front() & 0b00111111;
-      data = data.last(data.size() - 1);
-      output_data.push_back(previous_pixels[index]);
-      prev = output_data.back();
-      continue;
-    }
-    if (data.front() >> 6 == 0b01) {
-      // Parse Diff
-      auto diff = data.front() & 0b00111111;
-      data = data.last(data.size() - 1);
-      unsigned char r = prev.r + (diff >> 4) - 2;
-      unsigned char g = prev.g + ((diff >> 2) & 0b11) - 2;
-      unsigned char b = prev.b + (diff & 0b11) - 2;
-      output_data.emplace_back(r, g, b);
-      previous_pixels[output_data.back().hash()] = output_data.back();
-      prev = output_data.back();
-      continue;
-    }
-    if (data.front() >> 6 == 0b10) {
-      // Parse LUMA
-      auto diff_green = data.front() & 0b00111111;
-      auto second_byte = data[1];
-      data = data.last(data.size() - 2);
-      unsigned char r = (second_byte >> 4) + (diff_green - 32) + prev.r - 8;
-      unsigned char g = diff_green - 32 + prev.g;
-      unsigned char b = (second_byte & 0x0f) + (diff_green - 32) + prev.b - 8;
-      output_data.emplace_back(r, g, b);
-      previous_pixels[output_data.back().hash()] = output_data.back();
-      prev = output_data.back();
-      continue;
-    }
-    if (std::ranges::all_of(data.first(7),
-                            [](auto i) noexcept -> bool { return i == 0; }) &&
-        data.back() == 1) {
-      break;
-    }
+    prev = image.pixels.back();
   }
-  return output_data;
+  return image;
 }
-static const std::array<char, 8> end_marker{0, 0, 0, 0, 0, 0, 0, 1};
 
 auto generate_header(std::uint32_t width, std::uint32_t height, int channels) {
   return qoi_header{

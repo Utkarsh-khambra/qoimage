@@ -110,14 +110,14 @@ int main() {
       auto p = encode({{1, 3, 4}}, 1, 1, 3);
       auto q = decode(p);
       std::vector<Pixel> expected_result{{1, 3, 4}};
-      expect(std::ranges::equal(q, expected_result));
+      expect(std::ranges::equal(q.pixels, expected_result));
     };
     should("chunk range") = [] {
       auto p =
           encode(std::vector<Pixel>{{1, 3, 4}, {1, 3, 4}, {1, 3, 4}}, 3, 1, 3);
       auto q = decode(p);
       expect(std::ranges::equal(
-          q, std::vector<Pixel>{{1, 3, 4}, {1, 3, 4}, {1, 3, 4}}));
+          q.pixels, std::vector<Pixel>{{1, 3, 4}, {1, 3, 4}, {1, 3, 4}}));
     };
 
     should("chunk index") = [] {
@@ -136,7 +136,7 @@ int main() {
       const std::vector<Pixel> expected_result{
           {1, 3, 4}, {2, 5, 7}, {3, 6, 9}, {1, 3, 4}, {2, 5, 7},
           {3, 6, 9}, {3, 6, 9}, {3, 6, 9}, {2, 5, 7}, {2, 5, 7}};
-      expect(std::ranges::equal(q, expected_result));
+      expect(std::ranges::equal(q.pixels, expected_result));
     };
 
     should("chunk difference") = [] {
@@ -155,7 +155,7 @@ int main() {
       const std::vector<Pixel> expected_result{
           {1, 3, 4}, {2, 4, 3}, {3, 5, 2}, {1, 3, 4}, {2, 4, 3},
           {3, 5, 2}, {3, 5, 2}, {3, 5, 2}, {2, 4, 3}, {2, 4, 3}};
-      expect(std::ranges::equal(q, expected_result));
+      expect(std::ranges::equal(q.pixels, expected_result));
     };
   };
 }

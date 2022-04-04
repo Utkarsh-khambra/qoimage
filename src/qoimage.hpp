@@ -13,7 +13,11 @@ struct qoi_header {
 };
 
 namespace qoi {
+struct Image {
+  qoi_header header;
+  std::vector<Pixel> pixels;
+};
 std::vector<unsigned char> encode(const std::vector<Pixel> &data, int width,
                                   int height, int channels);
-std::vector<Pixel> decode(std::span<unsigned char> data);
+Image decode(std::span<unsigned char> data);
 } // namespace qoi

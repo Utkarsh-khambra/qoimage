@@ -33,4 +33,9 @@
 
 /build
 /.cache
-/test_files
+/src/test_files
+/src/tests/main.cpp
+/src/tests/stb.cpp
+/src/tests/stb.h
+/src/tests/stb_image_write.cpp
+/src/tests/stb_image_write.hpp
