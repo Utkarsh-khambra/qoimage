@@ -67,10 +67,9 @@ qoi::Image qoi::decode(std::span<unsigned char> data) {
         data = data.last(data.size() - 1);
         static_assert(std::is_trivially_copyable_v<Pixel>,
                       "Pixel not trivial copyable");
-        image.pixels.emplace_back(data[0], data[1], data[2]);
+        image.pixels.emplace_back(data[0], data[1], data[2], prev.a);
         data = data.last(data.size() - 3);
         previous_pixels[image.pixels.back().hash()] = image.pixels.back();
-        // prev = image.pixels.back();
       } else if (data.front() == 0b11111111) {
         // Parse RGBA
         data = data.last(data.size() - 1);
@@ -98,28 +97,26 @@ qoi::Image qoi::decode(std::span<unsigned char> data) {
         }
         data = data.last(data.size() - 1);
         image.pixels.push_back(previous_pixels[index]);
-        // prev = image.pixels.back();
       } else if (data.front() >> 6 == 0b01) {
         // Parse Diff
         auto diff = data.front() & 0b00111111;
         data = data.last(data.size() - 1);
-        unsigned char r = prev.r + ((diff >> 4) & 0b11) - 2;
-        unsigned char g = prev.g + ((diff >> 2) & 0b11) - 2;
-        unsigned char b = prev.b + (diff & 0b11) - 2;
+        unsigned char r = prev.r + ((diff >> 4) & 0x03) - 2;
+        unsigned char g = prev.g + ((diff >> 2) & 0x03) - 2;
+        unsigned char b = prev.b + (diff & 0x03) - 2;
         image.pixels.emplace_back(r, g, b, prev.a);
         previous_pixels[image.pixels.back().hash()] = image.pixels.back();
-        // prev = image.pixels.back();
       } else if (data.front() >> 6 == 0b10) {
         // Parse LUMA
         auto diff_green = data.front() & 0b00111111;
         int second_byte = data[1];
         data = data.last(data.size() - 2);
-        unsigned char r = (second_byte >> 4) + (diff_green - 32) + prev.r - 8;
+        unsigned char r =
+            ((second_byte >> 4) & 0x0f) + (diff_green - 32) + prev.r - 8;
         unsigned char g = diff_green - 32 + prev.g;
         unsigned char b = (second_byte & 0x0f) + (diff_green - 32) + prev.b - 8;
         image.pixels.emplace_back(r, g, b, prev.a);
         previous_pixels[image.pixels.back().hash()] = image.pixels.back();
-        // prev = image.pixels.back();
       }
     }
     prev = image.pixels.back();
